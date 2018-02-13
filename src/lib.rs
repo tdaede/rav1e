@@ -320,6 +320,41 @@ fn write_sb(cw: &mut ContextWriter, fi: &FrameInvariants, fs: &mut FrameState, s
     }
 }
 
+fn write_sb_split(cw: &mut ContextWriter, fi: &FrameInvariants, fs: &mut FrameState, sbo: &SuperBlockOffset, mode: PredictionMode) {
+    cw.write_partition(PartitionType::PARTITION_SPLIT);
+    for ystep in 0 .. 2 {
+        for xstep in 0 .. 2 {
+            cw.write_partition(PartitionType::PARTITION_NONE);
+            // The partition offset is represented using a BlockOffset
+            let po = sbo.block_offset(xstep << 3, ystep << 3);
+            cw.write_skip(&po, false);
+            cw.write_intra_mode_kf(&po, mode);
+            let uv_mode = mode;
+            cw.write_intra_uv_mode(uv_mode, mode);
+            let tx_type = TxType::DCT_DCT;
+            cw.write_tx_type(tx_type, mode);
+            for p in 0..1 {
+                for by in 0..8 {
+                    for bx in 0..8 {
+                        let bo = sbo.block_offset(bx, by);
+                        cw.bc.at(&bo).mode = mode;
+                        write_b(cw, fi, fs, p, &bo, mode, tx_type);
+                    }
+                }
+            }
+            let uv_tx_type = exported_intra_mode_to_tx_type_context[uv_mode as usize];
+            for p in 1..3 {
+                for by in 0..4 {
+                    for bx in 0..4 {
+                        let bo = sbo.block_offset(bx, by);
+                        write_b(cw, fi, fs, p, &bo, uv_mode, uv_tx_type);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
     let w = ec::Writer::new();
     let fc = CDFContext::new();
@@ -346,6 +381,7 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
 
             let mut best_mode = PredictionMode::DC_PRED;
             let mut best_rd = std::f64::MAX;
+            let mut best_pt = PartitionType::PARTITION_NONE;
 
             for &mode in RAV1E_INTRA_MODES {
                 let checkpoint = cw.checkpoint();
@@ -358,12 +394,34 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
                 if rd < best_rd {
                     best_rd = rd;
                     best_mode = mode;
+                    best_pt = PartitionType::PARTITION_NONE;
                 }
 
                 cw.rollback(checkpoint.clone());
             }
 
-            write_sb(&mut cw, fi, fs, &sbo, best_mode);
+            for &mode in RAV1E_INTRA_MODES {
+                let checkpoint = cw.checkpoint();
+
+                write_sb_split(&mut cw, fi, fs, &sbo, mode);
+                let d = sse_64x64(&fs.input.planes[0].slice(&po), &fs.rec.planes[0].slice(&po));
+                let r = ((cw.w.tell_frac() - tell) as f64)/8.0;
+
+                let rd = (d as f64) + lambda*r;
+                if rd < best_rd {
+                    best_rd = rd;
+                    best_mode = mode;
+                    best_pt = PartitionType::PARTITION_SPLIT;
+                }
+
+                cw.rollback(checkpoint.clone());
+            }
+
+            if best_pt == PartitionType::PARTITION_NONE {
+                write_sb(&mut cw, fi, fs, &sbo, best_mode);
+            } else {
+                write_sb_split(&mut cw, fi, fs, &sbo, best_mode);
+            }
         }
     }
     let mut h = cw.w.done();
