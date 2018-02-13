@@ -403,9 +403,9 @@ pub struct ContextWriter {
 }
 
 impl ContextWriter {
-    pub fn write_partition(&mut self, p: PartitionType) {
+    pub fn write_partition(&mut self, p: PartitionType, bs: BlockSize) {
         let bo = BlockOffset { x: 0, y: 0 };
-        let ctx = self.bc.partition_plane_context(&bo, BlockSize::BLOCK_64X64);
+        let ctx = self.bc.partition_plane_context(&bo, bs);
         self.w.symbol(p as u32, &mut self.fc.partition_cdf[ctx], PARTITION_TYPES);
     }
     pub fn write_intra_mode_kf(&mut self, bo: &BlockOffset, mode: PredictionMode) {

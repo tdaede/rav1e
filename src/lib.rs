@@ -291,7 +291,7 @@ pub fn write_b(cw: &mut ContextWriter, fi: &FrameInvariants, fs: &mut FrameState
 }
 
 fn write_sb(cw: &mut ContextWriter, fi: &FrameInvariants, fs: &mut FrameState, sbo: &SuperBlockOffset, mode: PredictionMode) {
-    cw.write_partition(PartitionType::PARTITION_NONE);
+    cw.write_partition(PartitionType::PARTITION_NONE, BlockSize::BLOCK_64X64);
     // The partition offset is represented using a BlockOffset
     let po = sbo.block_offset(0, 0);
     cw.write_skip(&po, false);
@@ -321,10 +321,10 @@ fn write_sb(cw: &mut ContextWriter, fi: &FrameInvariants, fs: &mut FrameState, s
 }
 
 fn write_sb_split(cw: &mut ContextWriter, fi: &FrameInvariants, fs: &mut FrameState, sbo: &SuperBlockOffset, mode: PredictionMode) {
-    cw.write_partition(PartitionType::PARTITION_SPLIT);
+    cw.write_partition(PartitionType::PARTITION_SPLIT, BlockSize::BLOCK_64X64);
     for ystep in 0 .. 2 {
         for xstep in 0 .. 2 {
-            cw.write_partition(PartitionType::PARTITION_NONE);
+            cw.write_partition(PartitionType::PARTITION_NONE, BlockSize::BLOCK_32X32);
             // The partition offset is represented using a BlockOffset
             let po = sbo.block_offset(xstep << 3, ystep << 3);
             cw.write_skip(&po, false);
