@@ -1,0 +1,6 @@
+before_script:
+  - apt-get install -y -qq rust
+
+test:
+  script:
+    - cargo test
