@@ -4,6 +4,7 @@ before_script:
 
 test:
   script:
+    - git submodule update --init
     - cargo test
   tags:
     - alpine
