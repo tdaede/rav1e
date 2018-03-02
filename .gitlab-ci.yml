@@ -1,6 +1,6 @@
 before_script:
   - apk update
-  - apk add rust cargo cmake git
+  - apk add rust cargo cmake git make yasm
 
 test:
   script:
