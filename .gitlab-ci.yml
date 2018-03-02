@@ -1,6 +1,6 @@
 before_script:
   - apk update
-  - apk add rust
+  - apk add rust cargo
 
 test:
   script:
