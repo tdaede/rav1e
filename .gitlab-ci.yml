@@ -4,3 +4,5 @@ before_script:
 test:
   script:
     - cargo test
+  tags:
+    - alpine
