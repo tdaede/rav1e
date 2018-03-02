@@ -1,6 +1,6 @@
 before_script:
   - apk update
-  - apk install rust
+  - apk add rust
 
 test:
   script:
