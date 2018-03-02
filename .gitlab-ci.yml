@@ -1,5 +1,6 @@
 before_script:
-  - apt-get install -y -qq rust
+  - apk update
+  - apk install rust
 
 test:
   script:
