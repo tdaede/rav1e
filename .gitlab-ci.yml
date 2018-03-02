@@ -1,6 +1,6 @@
 before_script:
   - apk update
-  - apk add rust cargo
+  - apk add rust cargo cmake
 
 test:
   script:
