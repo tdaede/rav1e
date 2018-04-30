@@ -124,7 +124,7 @@
 #define CONFIG_RAWBITS 0
 #define CONFIG_EC_SMALLMUL 1
 #define CONFIG_PVQ 0
-#define CONFIG_CFL 0
+#define CONFIG_CFL 1
 #define CONFIG_XIPHRC 0
 #define CONFIG_CB4X4 1
 #define CONFIG_CHROMA_2X2 0
