@@ -27,7 +27,7 @@ fn main() {
         None => None
     };
     let mut fi = FrameInvariants::new(width, height, files.quantizer, files.speed);
-    let sequence = Sequence::new();
+    let sequence = Sequence::new(width, height);
     write_ivf_header(&mut files.output_file, fi.padded_w, fi.padded_h, framerate.num, framerate.den);
 
     let mut rl = Editor::<()>::new();
