@@ -27,7 +27,7 @@ fn main() {
         None => None
     };
     let mut fi = FrameInvariants::new(width, height, files.quantizer, files.speed);
-    let sequence = Sequence::new(width, height);
+    let mut sequence = Sequence::new(width, height);
     write_ivf_header(&mut files.output_file, fi.padded_w, fi.padded_h, framerate.num, framerate.den);
 
     let mut rl = Editor::<()>::new();
@@ -40,7 +40,7 @@ fn main() {
                 rl.add_history_entry(&line);
                 match line.split_whitespace().next() {
                     Some("process_frame") => {
-                        process_frame(&sequence, &fi, &mut files.output_file, &mut y4m_dec, y4m_enc.as_mut(), &mut last_rec);
+                        process_frame(&mut sequence, &fi, &mut files.output_file, &mut y4m_dec, y4m_enc.as_mut(), &mut last_rec);
                         fi.number += 1;
                         if fi.number == files.limit {
                             break;
