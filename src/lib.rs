@@ -480,7 +480,7 @@ impl<'a> UncompressedHeader for BitWriter<'a, BE> {
         size += 4;
         self.write_bit(obu_extension != 0)?;
         size += 1;
-        self.write(1, 1)?; // obu_has_payload_length_field
+        self.write(1, 0)?; // reserved
         size += 1;
         self.write(1, 0)?; // reserved
         size += 1;
@@ -785,22 +785,15 @@ fn write_obus(packet: &mut Write, sequence: &mut Sequence,
 
     let mut buf1 = Vec::new();
     {
-      let mut bw1 = BitWriter::<BE>::new(&mut buf1);
+        let mut bw1 = BitWriter::<BE>::new(&mut buf1);
+        bw1.write(8,1)?;	// size of payload == 1, one byte
       bw1.write_obu_header(OBU_Type::OBU_TEMPORAL_DELIMITER, obu_extension);
-      bw1.write(8,0)?;	// size of payload == 0, one byte
     }
     packet.write(&buf1).unwrap();
     buf1.clear();
 
     // write sequence header obu if KEY_FRAME, preceded by 4-byte size
     if fi.frame_type == FrameType::KEY {
-        {
-            let mut bw1 = BitWriter::<BE>::new(&mut buf1);
-            bw1.write_obu_header(OBU_Type::OBU_SEQUENCE_HEADER, obu_extension);
-        }
-        packet.write(&buf1).unwrap();
-        buf1.clear();
-
         let mut buf2 = Vec::new();
         {
             let mut obu_payload_size = 0 as u64;
@@ -815,10 +808,17 @@ fn write_obus(packet: &mut Write, sequence: &mut Sequence,
             let mut bw1 = BitWriter::<BE>::new(&mut buf1);
             // uleb128()
             let mut coded_payload_length = [0 as u8; 8];
-            let leb_size = aom_uleb_encode(obu_payload_size, &mut coded_payload_length);
+            let leb_size = aom_uleb_encode(obu_payload_size+1, &mut coded_payload_length);
             for i in 0..leb_size {
                 bw1.write(8, coded_payload_length[i]);
             }
+        }
+        packet.write(&buf1).unwrap();
+        buf1.clear();
+
+        {
+            let mut bw1 = BitWriter::<BE>::new(&mut buf1);
+            bw1.write_obu_header(OBU_Type::OBU_SEQUENCE_HEADER, obu_extension);
         }
         packet.write(&buf1).unwrap();
         buf1.clear();
@@ -853,7 +853,7 @@ fn write_obus(packet: &mut Write, sequence: &mut Sequence,
             let mut bw1 = BitWriter::<BE>::new(&mut buf1);
             // uleb128()
             let mut coded_payload_length = [0 as u8; 8];
-            let leb_size = aom_uleb_encode(obu_payload_size, &mut coded_payload_length);
+            let leb_size = aom_uleb_encode(obu_payload_size+1, &mut coded_payload_length);
             for i in 0..leb_size {
                 bw1.write(8, coded_payload_length[i]);
             }
@@ -1402,8 +1402,8 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
 
 fn encode_frame(sequence: &mut Sequence, fi: &FrameInvariants, fs: &mut FrameState, last_rec: &Option<Frame>) -> Vec<u8> {
     let mut packet = Vec::new();
-    write_uncompressed_header(&mut packet, sequence, fi).unwrap();
-    //write_obus(&mut packet, sequence, fi).unwrap();
+    //write_uncompressed_header(&mut packet, sequence, fi).unwrap();
+    write_obus(&mut packet, sequence, fi).unwrap();
     if fi.show_existing_frame {
         match last_rec {
             &Some(ref rec) => for p in 0..3 {
