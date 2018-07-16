@@ -795,8 +795,8 @@ fn write_obus(packet: &mut Write, sequence: &mut Sequence,
     // write sequence header obu if KEY_FRAME, preceded by 4-byte size
     if fi.frame_type == FrameType::KEY {
         let mut buf2 = Vec::new();
+        let mut obu_payload_size = 0 as u64;
         {
-            let mut obu_payload_size = 0 as u64;
             let mut bw2 = BitWriter::<BE>::new(&mut buf2);
             let error = bw2.write_sequence_header_obu(sequence, fi);
             bw2.byte_align()?;
@@ -805,6 +805,11 @@ fn write_obus(packet: &mut Write, sequence: &mut Sequence,
                 Ok(size) => obu_payload_size = size as u64,
                 Err(e) => println!("obu_payload_size error: {:?}", e),
             }
+        }
+        println!("obu_payload_size: {}", obu_payload_size);
+        println!("size of buf2: {}", buf2.len());
+        obu_payload_size = buf2.len() as u64;
+        {
             let mut bw1 = BitWriter::<BE>::new(&mut buf1);
             // uleb128()
             let mut coded_payload_length = [0 as u8; 8];
@@ -815,7 +820,6 @@ fn write_obus(packet: &mut Write, sequence: &mut Sequence,
         }
         packet.write(&buf1).unwrap();
         buf1.clear();
-
         {
             let mut bw1 = BitWriter::<BE>::new(&mut buf1);
             bw1.write_obu_header(OBU_Type::OBU_SEQUENCE_HEADER, obu_extension);
