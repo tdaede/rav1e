@@ -13,6 +13,7 @@ use metrics::calculate_frame_psnr;
 use partition::*;
 use scenechange::SceneChangeDetector;
 use self::EncoderStatus::*;
+use rdo::RDOTracker;
 
 use std::{cmp, fmt, io};
 use std::collections::BTreeMap;
@@ -68,7 +69,8 @@ pub struct EncoderConfig {
   pub quantizer: usize,
   pub tune: Tune,
   pub speed_settings: SpeedSettings,
-  pub show_psnr: bool,
+    pub show_psnr: bool,
+    pub train_rdo: bool,
 }
 
 impl Default for EncoderConfig {
@@ -99,7 +101,8 @@ impl EncoderConfig {
       quantizer: 100,
       tune: Tune::Psnr,
       speed_settings: SpeedSettings::from_preset(speed),
-      show_psnr: false,
+        show_psnr: false,
+        train_rdo: false
     }
   }
 }

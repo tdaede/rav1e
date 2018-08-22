@@ -24,12 +24,15 @@ use transform::*;
 use util::*;
 use partition::PartitionType::*;
 
-use bitstream_io::{BitWriter, BigEndian};
+use bitstream_io::{BitWriter, BigEndian, LittleEndian};
+use bincode::{serialize, deserialize};
 use std;
 use std::{fmt, io};
 use std::io::Write;
+use std::io::Read;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::fs::File;
 
 extern {
   pub fn av1_rtcd();
@@ -431,6 +434,7 @@ pub struct FrameState {
   pub deblock: DeblockState,
   pub segmentation: SegmentationState,
   pub restoration: RestorationState,
+  pub t: RDOTracker,
 }
 
 impl FrameState {
@@ -459,6 +463,7 @@ impl FrameState {
       deblock: Default::default(),
       segmentation: Default::default(),
       restoration: rs,
+      t: RDOTracker::new()
     }
   }
 }
@@ -1864,7 +1869,7 @@ pub fn encode_tx_block(
   w: &mut dyn Writer, p: usize, bo: &BlockOffset, mode: PredictionMode,
   tx_size: TxSize, tx_type: TxType, plane_bsize: BlockSize, po: &PlaneOffset,
   skip: bool, ac: &[i16], alpha: i16, for_rdo_use: bool
-) -> (bool, i64) {
+) -> (bool, i64, u64) {
   let qidx = get_qidx(fi, fs, cw, bo);
   let rec = &mut fs.rec.planes[p];
   let PlaneConfig { stride, xdec, ydec, .. } = fs.input.planes[p].cfg;
@@ -1877,7 +1882,8 @@ pub fn encode_tx_block(
     mode.predict_intra(&mut rec.mut_slice(po), tx_size, bit_depth, &ac, alpha, &edge_buf);
   }
 
-  if skip { return (false, -1); }
+    if skip { return (false, -1, 0); }
+  let fast_distortion = compute_fast_distortion(fs.input.planes[p].slice(po), rec.slice(po), tx_size.width(), tx_size.height());
 
   let mut residual_storage: AlignedArray<[i16; 64 * 64]> = UninitializedAlignedArray();
   let mut coeffs_storage: AlignedArray<[i32; 64 * 64]> = UninitializedAlignedArray();
@@ -1923,7 +1929,7 @@ pub fn encode_tx_block(
     let tx_dist_scale_rounding_offset = 1 << (tx_dist_scale_bits - 1);
     tx_dist = (tx_dist + tx_dist_scale_rounding_offset) >> tx_dist_scale_bits;
   }
-  (has_coeff, tx_dist)
+  (has_coeff, tx_dist, fast_distortion)
 }
 
 pub fn motion_compensate(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter,
@@ -2019,10 +2025,12 @@ pub fn encode_block_b(fi: &FrameInvariants, fs: &mut FrameState,
                       ref_frames: [usize; 2], mvs: [MotionVector; 2],
                       bsize: BlockSize, bo: &BlockOffset, skip: bool,
                       cfl: CFLParams, tx_size: TxSize, tx_type: TxType,
-                      mode_context: usize, mv_stack: &[CandidateMV], for_rdo_use: bool)
-                      -> i64 {
+                      mode_context: usize, mv_stack: &[CandidateMV], for_rdo_use: bool, rdo_type: RDOType)
+                      -> (i64, u64, u64) {
   let is_inter = !luma_mode.is_intra();
   if is_inter { assert!(luma_mode == chroma_mode); };
+  let mut fast_distortion: u64 = 0;
+  let mut estimated_distortion: u64 = 0;
   let sb_size = if fi.sequence.use_128x128_superblock {
     BlockSize::BLOCK_128X128
   } else {
@@ -2157,7 +2165,7 @@ pub fn encode_block_b(fi: &FrameInvariants, fs: &mut FrameState,
     motion_compensate(fi, fs, cw, luma_mode, ref_frames, mvs, bsize, bo, false);
     write_tx_tree(fi, fs, cw, w, luma_mode, bo, bsize, tx_size, tx_type, skip, false, for_rdo_use)
   } else {
-    write_tx_blocks(fi, fs, cw, w, luma_mode, chroma_mode, bo, bsize, tx_size, tx_type, skip, cfl, false, for_rdo_use)
+    write_tx_blocks(fi, fs, cw, w, luma_mode, chroma_mode, bo, bsize, tx_size, tx_type, skip, cfl, false, for_rdo_use, rdo_type)
   }
 }
 
@@ -2202,7 +2210,7 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
                        cw: &mut ContextWriter, w: &mut dyn Writer,
                        luma_mode: PredictionMode, chroma_mode: PredictionMode, bo: &BlockOffset,
                        bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
-                       cfl: CFLParams, luma_only: bool, for_rdo_use: bool) -> i64 {
+                       cfl: CFLParams, luma_only: bool, for_rdo_use: bool, rdo_type: RDOType) -> (i64, u64, u64) {
   let bw = bsize.width_mi() / tx_size.width_mi();
   let bh = bsize.height_mi() / tx_size.height_mi();
   let qidx = get_qidx(fi, fs, cw, bo);
@@ -2211,6 +2219,8 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
   let ac = &mut [0i16; 32 * 32];
   let mut tx_dist: i64 = 0;
   let do_chroma = has_chroma(bo, bsize, xdec, ydec);
+  let mut fast_distortion = 0;
+  let mut estimated_distortion = 0;
 
   fs.qc.update(qidx, tx_size, luma_mode.is_intra(), fi.sequence.bit_depth, fi.dc_delta_q[0], 0);
 
@@ -2222,7 +2232,7 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
       };
 
       let po = tx_bo.plane_offset(&fs.input.planes[0].cfg);
-      let (_, dist) =
+      let (_, dist, fast_distortion_block) =
         encode_tx_block(
           fi, fs, cw, w, 0, &tx_bo, luma_mode, tx_size, tx_type, bsize, &po,
           skip, ac, 0, for_rdo_use
@@ -2232,7 +2242,7 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
     }
   }
 
-  if luma_only { return tx_dist };
+  if luma_only { return (tx_dist, 0, 0) };
 
   let uv_tx_size = bsize.largest_uv_tx_size(fi.sequence.chroma_sampling);
 
@@ -2276,17 +2286,35 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
           let mut po = bo.plane_offset(&fs.input.planes[p].cfg);
           po.x += (bx * uv_tx_size.width()) as isize;
           po.y += (by * uv_tx_size.height()) as isize;
-          let (_, dist) =
-            encode_tx_block(fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
-                            plane_bsize, &po, skip, ac, alpha, for_rdo_use);
-          assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
-          tx_dist += dist;
+          match rdo_type {
+            RDOType::Fast => {
+              let fast_distortion_block = get_fast_distortion_tx_block(
+                fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
+                plane_bsize, &po, skip, fi.sequence.bit_depth, ac, alpha);
+              fast_distortion += fast_distortion_block;
+            },
+            RDOType::Accurate => {
+              let (_, dist, fast_distortion_block) =
+                encode_tx_block(fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
+                                plane_bsize, &po, skip, ac, alpha, for_rdo_use);
+              assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
+              tx_dist += dist;
+              fast_distortion += fast_distortion_block;
+            }
+          }
+
         }
       }
     }
   }
 
-  tx_dist
+    if rdo_type == RDOType::Fast{
+      // look up rate and distortion in table
+      let estimated_rate = fs.t.estimate_rate(fi.base_q_idx, tx_size, fast_distortion);
+      estimated_distortion = fs.t.estimate_distortion(fi.base_q_idx, tx_size, fast_distortion);
+      w.add_bits((estimated_rate >> 3) as u32);
+    }
+    (tx_dist, fast_distortion, estimated_distortion)
 }
 
 // FIXME: For now, assume tx_mode is LARGEST_TX, so var-tx is not implemented yet
@@ -2294,7 +2322,7 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
 pub fn write_tx_tree(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut ContextWriter, w: &mut dyn Writer,
                      luma_mode: PredictionMode, bo: &BlockOffset,
                      bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool,
-                     luma_only: bool, for_rdo_use: bool) -> i64 {
+                     luma_only: bool, for_rdo_use: bool) -> (i64, u64, u64) {
   let bw = bsize.width_mi() / tx_size.width_mi();
   let bh = bsize.height_mi() / tx_size.height_mi();
   let qidx = get_qidx(fi, fs, cw, bo);
@@ -2306,13 +2334,13 @@ pub fn write_tx_tree(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut Context
   fs.qc.update(qidx, tx_size, luma_mode.is_intra(), fi.sequence.bit_depth, fi.dc_delta_q[0], 0);
 
   let po = bo.plane_offset(&fs.input.planes[0].cfg);
-  let (has_coeff, dist) = encode_tx_block(
+  let (has_coeff, dist, fast_distortion) = encode_tx_block(
     fi, fs, cw, w, 0, &bo, luma_mode, tx_size, tx_type, bsize, &po, skip, ac, 0, for_rdo_use
   );
   assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
   tx_dist += dist;
 
-  if luma_only { return tx_dist };
+  if luma_only { return (tx_dist, 0, 0) };
 
   let uv_tx_size = bsize.largest_uv_tx_size(fi.sequence.chroma_sampling);
 
@@ -2340,7 +2368,7 @@ pub fn write_tx_tree(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut Context
       };
 
       let po = bo.plane_offset(&fs.input.planes[p].cfg);
-      let (_, dist) =
+      let (_, dist, fast_distortion_block) =
         encode_tx_block(fi, fs, cw, w, p, &tx_bo, luma_mode, uv_tx_size, uv_tx_type,
                         plane_bsize, &po, skip, ac, 0, for_rdo_use);
       assert!(!fi.use_tx_domain_distortion || !for_rdo_use || skip || dist >= 0);
@@ -2348,12 +2376,12 @@ pub fn write_tx_tree(fi: &FrameInvariants, fs: &mut FrameState, cw: &mut Context
     }
   }
 
-  tx_dist
+  (tx_dist, 0, 0)
 }
 
 pub fn encode_block_with_modes(fi: &FrameInvariants, fs: &mut FrameState,
                                cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
-                               bsize: BlockSize, bo: &BlockOffset, mode_decision: &RDOPartitionOutput) {
+                               bsize: BlockSize, bo: &BlockOffset, mode_decision: &RDOPartitionOutput, rdo_type: RDOType) {
   let (mode_luma, mode_chroma) =
     (mode_decision.pred_mode_luma, mode_decision.pred_mode_chroma);
   let cfl = mode_decision.pred_cfl_params;
@@ -2375,7 +2403,7 @@ pub fn encode_block_with_modes(fi: &FrameInvariants, fs: &mut FrameState,
                               bsize, bo, skip);
   encode_block_b(fi, fs, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
                  mode_luma, mode_chroma, ref_frames, mvs, bsize, bo, skip, cfl,
-                 tx_size, tx_type, mode_context, &mv_stack, false);
+                 tx_size, tx_type, mode_context, &mv_stack, false, rdo_type);
 }
 
 fn encode_partition_bottomup(
@@ -2384,6 +2412,7 @@ fn encode_partition_bottomup(
   bo: &BlockOffset, pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5],
   ref_rd_cost: f64
 ) -> (RDOOutput) {
+  let rdo_type = RDOType::Accurate;
   let mut rd_cost = std::f64::MAX;
   let mut best_rd = std::f64::MAX;
   let mut rdo_output = RDOOutput {
@@ -2443,7 +2472,7 @@ fn encode_partition_bottomup(
 
     if !can_split {
       encode_block_with_modes(fi, fs, cw, w_pre_cdef, w_post_cdef, bsize, bo,
-                              &mode_decision);
+                              &mode_decision, rdo_type);
     }
   }
 
@@ -2554,7 +2583,7 @@ fn encode_partition_bottomup(
           let offset = mode.bo.clone();
           // FIXME: redundant block re-encode
           encode_block_with_modes(fi, fs, cw, w_pre_cdef, w_post_cdef,
-                                  mode.bsize, &offset, &mode);
+                                  mode.bsize, &offset, &mode, rdo_type);
         }
       }
   }
@@ -2587,6 +2616,7 @@ fn encode_partition_topdown(fi: &FrameInvariants, fs: &mut FrameState,
   let bsw = bsize.width_mi();
   let bsh = bsize.height_mi();
   let is_square = bsize.is_sqr();
+  let rdo_type = RDOType::Accurate;
 
   // Always split if the current partition is too large
   let must_split = (bo.x + bsw as usize > fi.w_in_b ||
@@ -2626,7 +2656,7 @@ fn encode_partition_topdown(fi: &FrameInvariants, fs: &mut FrameState,
       partition_types.push(PartitionType::PARTITION_SPLIT);
     }
     rdo_output = rdo_partition_decision(fi, fs, cw,
-                                        w_pre_cdef, w_post_cdef, bsize, bo, &rdo_output, pmvs, &partition_types);
+                                        w_pre_cdef, w_post_cdef, bsize, bo, &rdo_output, pmvs, &partition_types, rdo_type);
     partition = rdo_output.part_type;
   } else {
     // Blocks of sizes below the supported range are encoded directly
@@ -2723,7 +2753,7 @@ fn encode_partition_topdown(fi: &FrameInvariants, fs: &mut FrameState,
                                   bsize, bo, skip);
       encode_block_b(fi, fs, cw, if cdef_coded  {w_post_cdef} else {w_pre_cdef},
                      mode_luma, mode_chroma, ref_frames, mvs, bsize, bo, skip, cfl,
-                     tx_size, tx_type, mode_context, &mv_stack, false);
+                     tx_size, tx_type, mode_context, &mv_stack, false, rdo_type);
     },
     PARTITION_SPLIT |
     PARTITION_HORZ |
@@ -2914,7 +2944,6 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
   if fs.deblock.levels[0] != 0 || fs.deblock.levels[1] != 0 {
     deblock_filter_frame(fs, &mut cw.bc, fi.sequence.bit_depth);
   }
-  {
     // Until the loop filters are pipelined, we'll need to keep
     // around a copy of both the pre- and post-cdef frame.
     let pre_cdef_frame = fs.rec.clone();
@@ -2927,6 +2956,19 @@ fn encode_tile(fi: &FrameInvariants, fs: &mut FrameState) -> Vec<u8> {
     if fi.sequence.enable_restoration {
       fs.restoration.lrf_filter_frame(&mut fs.rec, &pre_cdef_frame, &fi);
     }
+
+  if fi.config.train_rdo {
+  match File::open("rdo.dat") {
+    Ok(mut file) => {
+      let mut data = vec![];
+      file.read_to_end(&mut data).unwrap();
+      fs.t.merge_in(&deserialize(data.as_slice()).unwrap());
+    },
+    _ => ()
+  };
+    let mut rdo_file = File::create("rdo.dat").unwrap();
+    rdo_file.write(&serialize(&fs.t).unwrap()).unwrap();
+    fs.t.print_code();
   }
 
   fs.cdfs = cw.fc;

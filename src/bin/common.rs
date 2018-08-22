@@ -144,7 +144,10 @@ pub fn parse_cli() -> CliOptions {
     ).arg(
       Arg::with_name("PSNR")
         .help("calculate and display PSNR metrics")
-        .long("psnr")
+            .long("psnr")
+    ).arg(
+      Arg::with_name("train-rdo")
+        .long("train-rdo")
     ).get_matches();
 
   let io = EncoderIO {
@@ -178,6 +181,7 @@ fn parse_config(matches: &ArgMatches) -> EncoderConfig {
   if matches.occurrences_of("MIN_KEYFRAME_INTERVAL") == 0 {
     min_interval = min_interval.min(max_interval);
   }
+  let train_rdo = matches.is_present("train-rdo");
 
   // Validate arguments
   if quantizer == 0 {

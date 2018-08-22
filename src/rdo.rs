@@ -32,6 +32,13 @@ use quantize::dc_q;
 use Tune;
 use write_tx_blocks;
 use write_tx_tree;
+use rdo_tables::*;
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum RDOType {
+    Fast,
+    Accurate
+}
 
 use std;
 use std::vec::Vec;
@@ -57,6 +64,137 @@ pub struct RDOPartitionOutput {
   pub skip: bool,
   pub tx_size: TxSize,
   pub tx_type: TxType,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct RDOTracker {
+  rate_bins: Vec<Vec<Vec<u64>>>,
+  rate_counts: Vec<Vec<Vec<u64>>>,
+  dist_bins: Vec<Vec
+        <Vec<u64>>>,
+  dist_counts: Vec<Vec<Vec<u64>>>
+}
+
+impl RDOTracker {
+  pub fn new() -> RDOTracker {
+    RDOTracker {
+      rate_bins: vec![vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL]; RDO_QUANT_BINS],
+      rate_counts: vec![vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL]; RDO_QUANT_BINS],
+      dist_bins: vec![vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL]; RDO_QUANT_BINS],
+      dist_counts: vec![vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL]; RDO_QUANT_BINS],
+    }
+  }
+  fn merge_array(new: &mut Vec<u64>, old: &Vec<u64>) {
+    for (n, o) in new.iter_mut().zip(old.iter()) {
+      *n += o;
+    }
+  }
+  fn merge_2d_array(new: &mut Vec<Vec<u64>>, old: &Vec<Vec<u64>>) {
+    for (n, o) in new.iter_mut().zip(old.iter()) {
+      RDOTracker::merge_array(n, o);
+    }
+  }
+  fn merge_3d_array(new: &mut Vec<Vec<Vec<u64>>>, old: &Vec<Vec<Vec<u64>>>) {
+    for (n, o) in new.iter_mut().zip(old.iter()) {
+      RDOTracker::merge_2d_array(n, o);
+    }
+  }
+  pub fn merge_in(&mut self, input: &RDOTracker) {
+    RDOTracker::merge_3d_array(&mut self.rate_bins, &input.rate_bins);
+    RDOTracker::merge_3d_array(&mut self.rate_counts, &input.rate_counts);
+    RDOTracker::merge_3d_array(&mut self.dist_bins, &input.dist_bins);
+    RDOTracker::merge_3d_array(&mut self.dist_counts, &input.dist_counts);
+  }
+  pub fn add_rate(&mut self, qindex: u8, ts: TxSize, fast_distortion: u64, rate: u64) {
+    if fast_distortion != 0 {
+      let bs_index = ts as usize;
+      let q_bin_idx = (qindex as usize)/RDO_QUANT_DIV;
+      let bin_idx_tmp = (((fast_distortion as i64 - (RATE_EST_BIN_SIZE as i64) / 2)) as u64 / RATE_EST_BIN_SIZE) as usize;
+      let bin_idx = if bin_idx_tmp >= rdo_num_bins {
+        rdo_num_bins - 1
+      } else {
+        bin_idx_tmp
+      };
+      self.rate_counts[q_bin_idx][bs_index][bin_idx] += 1;
+      self.rate_bins[q_bin_idx][bs_index][bin_idx] += rate;
+    }
+  }
+  pub fn estimate_rate(&self, qindex: u8, ts: TxSize, fast_distortion: u64) -> u64 {
+    let bs_index = ts as usize;
+    let q_bin_idx = (qindex as usize)/RDO_QUANT_DIV;
+    let bin_idx_down = ((fast_distortion) / RATE_EST_BIN_SIZE).min((rdo_num_bins - 2) as u64);
+    let bin_idx_up = (bin_idx_down + 1).min((rdo_num_bins - 1) as u64);
+    let x0 = (bin_idx_down * RATE_EST_BIN_SIZE) as i64;
+    let x1 = (bin_idx_up * RATE_EST_BIN_SIZE) as i64;
+    let y0 = RDO_RATE_TABLE[q_bin_idx][bs_index][bin_idx_down as usize] as i64;
+    let y1 = RDO_RATE_TABLE[q_bin_idx][bs_index][bin_idx_up as usize] as i64;
+    let slope = ((y1 - y0) << 8) / (x1 - x0);
+    (y0 + (((fast_distortion as i64 - x0) * slope) >> 8)) as u64
+  }
+  pub fn add_distortion(&mut self, qindex: u8, ts: TxSize, fast_distortion: u64, distortion: u64) {
+    if fast_distortion != 0 {
+      let bs_index = ts as usize;
+      let q_bin_idx = (qindex as usize)/RDO_QUANT_DIV;
+      let bin_idx_tmp = (((fast_distortion as i64 - (DIST_EST_BIN_SIZE as i64) / 2)) as u64 / DIST_EST_BIN_SIZE) as usize;
+      let bin_idx = if bin_idx_tmp >= rdo_num_bins {
+        rdo_num_bins - 1
+      } else {
+        bin_idx_tmp
+      };
+      self.dist_counts[q_bin_idx][bs_index][bin_idx] += 1;
+      self.dist_bins[q_bin_idx][bs_index][bin_idx] += distortion;
+    }
+  }
+  pub fn estimate_distortion(&self, qindex: u8, ts: TxSize, fast_distortion: u64) -> u64 {
+    let bs_index = ts as usize;
+    let q_bin_idx = (qindex as usize)/RDO_QUANT_DIV;
+    let bin_idx_down = ((fast_distortion) / DIST_EST_BIN_SIZE).min((rdo_num_bins - 2) as u64);
+    let bin_idx_up = (bin_idx_down + 1).min((rdo_num_bins - 1) as u64);
+    let x0 = (bin_idx_down * DIST_EST_BIN_SIZE) as i64;
+    let x1 = (bin_idx_up * DIST_EST_BIN_SIZE) as i64;
+    let y0 = RDO_DISTORTION_TABLE[q_bin_idx][bs_index][bin_idx_down as usize] as i64;
+    let y1 = RDO_DISTORTION_TABLE[q_bin_idx][bs_index][bin_idx_up as usize] as i64;
+    let slope = ((y1 - y0) << 8) / (x1 - x0);
+    (y0 + (((fast_distortion as i64 - x0) * slope) >> 8)) as u64
+  }
+  pub fn print_code(&self) {
+    println!("pub static RDO_DISTORTION_TABLE: [[[u64; rdo_num_bins]; TxSize::TX_SIZES_ALL]; RDO_QUANT_BINS] = [");
+    for q_bin in 0..RDO_QUANT_BINS {
+      print!("[");
+      for bs_index in 0..TxSize::TX_SIZES_ALL {
+        print!("[");
+        for (bin_idx, (dist_total, dist_count)) in self.dist_bins[q_bin][bs_index].iter().zip(self.dist_counts[q_bin][bs_index].iter()).enumerate() {
+          if bin_idx == 0 {
+            print!("0,"); // we know zero SAD equals zero distortion
+          } else if *dist_count > 100 {
+            print!("{},", dist_total / dist_count);
+          } else {
+            print!("99999,"); // ensure mode isn't selected
+          }
+        }
+        println!("],");
+      }
+      println!("],");
+    }
+    println!("];");
+    println!("pub static RDO_RATE_TABLE: [[[u64; rdo_num_bins]; TxSize::TX_SIZES_ALL]; RDO_QUANT_BINS] = [");
+    for q_bin in 0..RDO_QUANT_BINS {
+      print!("[");
+      for bs_index in 0..TxSize::TX_SIZES_ALL {
+        print!("[");
+        for (bin_idx, (rate_total, rate_count)) in self.rate_bins[q_bin][bs_index].iter().zip(self.rate_counts[q_bin][bs_index].iter()).enumerate() {
+          if *rate_count > 100 {
+            print!("{},", rate_total / rate_count);
+          } else {
+            print!("99999,");
+          }
+        }
+        println!("],");
+      }
+      println!("],");
+    }
+    println!("];");
+  }
 }
 
 #[allow(unused)]
@@ -137,6 +275,40 @@ pub fn sse_wxh(
   sse
 }
 
+pub fn compute_fast_distortion(
+  refr: PlaneSlice, pred: PlaneSlice, w_y: usize, h_y: usize) -> u64 {
+    let mut sad = 0 as u32;
+    let mut plane_org = pred;
+    let mut plane_ref = refr;
+
+    for _r in 0..h_y {
+        {
+            let slice_org = plane_org.as_slice_w_width(w_y);
+            let slice_ref = plane_ref.as_slice_w_width(w_y);
+            sad += slice_org.iter().zip(slice_ref).map(|(&a, &b)| (a as i32 - b as i32).abs() as u32).sum::<u32>();
+        }
+        plane_org.y += 1;
+        plane_ref.y += 1;
+    }
+  sad as u64
+}
+
+fn estimate_rd_cost(fi: &FrameInvariants, bit_depth: usize,
+  bit_cost: u32, estimated_distortion: u64
+) -> (u64, f64) {
+  let q = dc_q(fi.base_q_idx, fi.dc_delta_q[0], fi.sequence.bit_depth) as f64;
+
+  // Convert q into Q0 precision, given that libaom quantizers are Q3
+  let q0 = q / 8.0_f64;
+
+  // Lambda formula from doc/theoretical_results.lyx in the daala repo
+  // Use Q0 quantizer since lambda will be applied to Q0 pixel domain
+  let lambda = q0 * q0 * std::f64::consts::LN_2 / 6.0;
+  // Compute rate
+  let rate = (bit_cost as f64) / ((1 << OD_BITRES) as f64);
+  (estimated_distortion, (estimated_distortion as f64) + lambda * rate)
+}
+
 pub fn get_lambda(fi: &FrameInvariants) -> f64 {
   let q = dc_q(fi.base_q_idx, fi.dc_delta_q[0], fi.sequence.bit_depth) as f64;
 
@@ -164,7 +336,7 @@ fn compute_rd_cost(
   fi: &FrameInvariants, fs: &FrameState, w_y: usize, h_y: usize,
   is_chroma_block: bool, bo: &BlockOffset, bit_cost: u32,
   luma_only: bool
-) -> f64 {
+) -> (u64, f64) {
   let lambda = get_lambda(fi);
 
   // Compute distortion
@@ -226,7 +398,7 @@ fn compute_rd_cost(
   // Compute rate
   let rate = (bit_cost as f64) / ((1 << OD_BITRES) as f64);
 
-  (distortion as f64) + lambda * rate
+  (distortion,(distortion as f64) + lambda * rate)
 }
 
 // Compute the rate-distortion cost for an encode
@@ -234,7 +406,7 @@ fn compute_tx_rd_cost(
   fi: &FrameInvariants, fs: &FrameState, w_y: usize, h_y: usize,
   is_chroma_block: bool, bo: &BlockOffset, bit_cost: u32, tx_dist: i64,
   skip: bool, luma_only: bool
-) -> f64 {
+) -> (u64, f64) {
   assert!(fi.config.tune == Tune::Psnr);
 
   let lambda = get_lambda(fi);
@@ -283,7 +455,7 @@ fn compute_tx_rd_cost(
   // Compute rate
   let rate = (bit_cost as f64) / ((1 << OD_BITRES) as f64);
 
-  (distortion as f64) + lambda * rate
+  (distortion, (distortion as f64) + lambda * rate)
 }
 
 pub fn rdo_tx_size_type(
@@ -375,6 +547,9 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
                          pmvs: &[Option<MotionVector>], needs_rec: bool
 ) -> RDOPartitionOutput {
   let mut best = EncodingSettings::default();
+  let rdo_type = if true {
+    RDOType::Accurate
+  } else { RDOType::Fast };
 
   // Get block luma and chroma dimensions
   let w = bsize.width();
@@ -503,7 +678,8 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
         }
 
         encode_block_a(&fi.sequence, fs, cw, wr, bsize, bo, skip);
-        let tx_dist =
+        let tell_coeffs = wr.tell_frac();
+        let (tx_dist, fast_distortion, estimated_distortion) =
           encode_block_b(
             fi,
             fs,
@@ -521,11 +697,12 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
             tx_type,
             mode_context,
             mv_stack,
-            !needs_rec
+            !needs_rec,
+            rdo_type
           );
-
+        let cost_coeffs = wr.tell_frac() - tell_coeffs;
         let cost = wr.tell_frac() - tell;
-        let rd = if fi.use_tx_domain_distortion && !needs_rec {
+        let (distortion, rd) = if fi.use_tx_domain_distortion && !needs_rec {
           compute_tx_rd_cost(
             fi,
             fs,
@@ -561,6 +738,10 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
           best.tx_size = tx_size;
           best.tx_type = tx_type;
         }
+        //let (distortion2, rd2) = estimate_rd_cost(fi, seq.bit_depth, cost, estimated_distortion);
+        //println!("{} {}", distortion, estimated_distortion);
+        fs.t.add_distortion(fi.base_q_idx, tx_size, fast_distortion, distortion);
+        fs.t.add_rate(fi.base_q_idx, tx_size, fast_distortion, cost_coeffs as u64);
 
         cw.rollback(&cw_checkpoint);
       });
@@ -712,15 +893,16 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
       false,
       CFLParams::new(),
       true,
-      false
+      false,
+      rdo_type
     );
     cw.rollback(&cw_checkpoint);
     if let Some(cfl) = rdo_cfl_alpha(fs, bo, bsize, fi.sequence.bit_depth, fi.sequence.chroma_sampling) {
       let mut wr: &mut dyn Writer = &mut WriterCounter::new();
       let tell = wr.tell_frac();
 
-      encode_block_a(&fi.sequence, fs, cw, wr, bsize, bo, best.skip);
-      encode_block_b(
+        encode_block_a(&fi.sequence, fs, cw, wr, bsize, bo, best.skip);
+        let (tx_dist, fast_distortion, estimated_distortion) = encode_block_b(
         fi,
         fs,
         cw,
@@ -737,13 +919,14 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
         best.tx_type,
         0,
         &Vec::new(),
-        false // For CFL, luma should be always reconstructed.
+            false, // For CFL, luma should be always reconstructed.
+            rdo_type
       );
 
       let cost = wr.tell_frac() - tell;
 
       // For CFL, tx-domain distortion is not an option.
-      let rd =
+      let (distortion, rd) =
         compute_rd_cost(
           fi,
           fs,
@@ -752,7 +935,7 @@ pub fn rdo_mode_decision(fi: &FrameInvariants, fs: &mut FrameState,
           is_chroma_block,
           bo,
           cost,
-          false
+            false
         );
 
       if rd < best.rd {
@@ -865,19 +1048,19 @@ pub fn rdo_tx_type_decision(
 
     let mut wr: &mut dyn Writer = &mut WriterCounter::new();
     let tell = wr.tell_frac();
-    let tx_dist = if is_inter {
+    let (tx_dist, fast_distortion, estimated_distortion) = if is_inter {
       write_tx_tree(
         fi, fs, cw, wr, mode, bo, bsize, tx_size, tx_type, false, true, true
       )
     }  else {
       let cfl = CFLParams::new(); // Unused
       write_tx_blocks(
-        fi, fs, cw, wr, mode, mode, bo, bsize, tx_size, tx_type, false, cfl, true, true
+        fi, fs, cw, wr, mode, mode, bo, bsize, tx_size, tx_type, false, cfl, true, true, RDOType::Accurate
       )
     };
 
     let cost = wr.tell_frac() - tell;
-    let rd = if fi.use_tx_domain_distortion {
+    let (distortion, rd) = if fi.use_tx_domain_distortion {
       compute_tx_rd_cost(
         fi,
         fs,
@@ -970,7 +1153,7 @@ pub fn rdo_partition_decision(
   cw: &mut ContextWriter, w_pre_cdef: &mut dyn Writer, w_post_cdef: &mut dyn Writer,
   bsize: BlockSize, bo: &BlockOffset,
   cached_block: &RDOOutput, pmvs: &[[Option<MotionVector>; REF_FRAMES]; 5],
-  partition_types: &Vec<PartitionType>,
+  partition_types: &Vec<PartitionType>, rdo_type: RDOType
 ) -> RDOOutput {
   let mut best_partition = cached_block.part_type;
   let mut best_rd = cached_block.rd_cost;
@@ -1062,7 +1245,7 @@ pub fn rdo_partition_decision(
             cw.write_partition(w, offset, PartitionType::PARTITION_NONE, subsize);
           }
           encode_block_with_modes(fi, fs, cw, w_pre_cdef, w_post_cdef, subsize,
-                                  offset, &mode_decision);
+                                  offset, &mode_decision, rdo_type);
           child_modes.push(mode_decision);
         }
       }
@@ -1157,4 +1340,32 @@ pub fn rdo_cdef_decision(sbo: &SuperBlockOffset, fi: &FrameInvariants,
 
   }
   best_index
+}
+
+pub fn get_fast_distortion_tx_block(
+  fi: &FrameInvariants, fs: &mut FrameState, _cw: &mut ContextWriter,
+  w: &mut dyn Writer, p: usize, _bo: &BlockOffset, mode: PredictionMode,
+  tx_size: TxSize, _tx_type: TxType, _plane_bsize: BlockSize, po: &PlaneOffset,
+  skip: bool, bit_depth: usize, ac: &[i16], alpha: i16
+) -> u64 {
+  let rec = &mut fs.rec.planes[p];
+
+  if mode.is_intra() {
+    let bit_depth = fi.sequence.bit_depth;
+    let edge_buf = get_intra_edges(&rec.slice(po), tx_size, bit_depth, &fs.input.planes[p].cfg, fi.w_in_b, fi.h_in_b, Some(mode));
+    mode.predict_intra(&mut rec.mut_slice(po), tx_size, bit_depth, &ac, alpha, &edge_buf);
+  }
+
+  let fast_distortion = compute_fast_distortion(fs.input.planes[p].slice(po), rec.slice(po), tx_size.width(), tx_size.height());
+
+  fast_distortion
+}
+
+#[test]
+fn estimate_rate_test() {
+    let t = RDOTracker::new();
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, 0), 595);
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, RATE_EST_BIN_SIZE*1), 746);
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, RATE_EST_BIN_SIZE*2), 691);
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, RATE_EST_BIN_SIZE/2), 643);
 }

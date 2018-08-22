@@ -14,7 +14,9 @@ extern crate bitstream_io;
 extern crate backtrace;
 extern crate libc;
 extern crate rand;
-
+#[macro_use]
+extern crate serde_derive;
+extern crate bincode;
 extern crate num_traits;
 extern crate paste;
 
@@ -32,6 +34,7 @@ pub mod transform;
 pub mod quantize;
 pub mod predict;
 pub mod rdo;
+pub mod rdo_tables;
 #[macro_use]
 pub mod util;
 pub mod context;
