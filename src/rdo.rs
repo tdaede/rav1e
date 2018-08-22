@@ -28,6 +28,7 @@ use quantize::dc_q;
 use std;
 use std::f64;
 use std::vec::Vec;
+use std::iter::*;
 use write_tx_blocks;
 use write_tx_tree;
 use partition::BlockSize;
@@ -37,6 +38,55 @@ use FrameState;
 use FrameType;
 use Tune;
 use Sequence;
+#[derive(Clone, Copy, PartialEq)]
+pub enum RDOType {
+  Fast,
+  Accurate
+}
+
+
+pub static RDO_DISTORTION_TABLE: [[u64; rdo_num_bins]; TxSize::TX_SIZES_ALL] = [
+[91,208,251,270,285,300,312,316,308,315,313,308,301,290,303,360,446,434,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[175,398,556,657,726,778,816,840,859,873,885,891,896,898,901,902,898,902,904,907,905,908,902,894,885,884,888,887,887,879,878,867,862,868,863,861,866,854,840,805,807,838,813,766,747,774,729,775,748,685,],
+[194,362,711,1069,1189,1375,1564,1722,1865,1992,2118,2234,2345,2459,2544,2621,2682,2760,2827,2876,2954,3016,3065,3115,3161,3201,3245,3276,3323,3356,3394,3413,3448,3456,3482,3514,3529,3541,3561,3577,3588,3615,3613,3623,3628,3639,3643,3660,3645,3675,],
+[0,0,592,824,1056,1282,1724,1768,1967,2541,2953,3255,3684,4184,4253,4298,4391,4439,4531,4794,4830,5052,5156,5287,5530,5701,5999,5989,6101,6262,6376,6546,6707,6923,7046,7033,7286,7252,7513,7701,7601,7769,7901,8022,8142,8293,8413,8503,8580,13023,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+];
+pub static RDO_RATE_TABLE: [[u64; rdo_num_bins]; TxSize::TX_SIZES_ALL] = [
+[0,715,691,1246,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,180,],
+[0,1472,1714,1790,1742,1689,1645,1548,1407,1406,1224,1029,1557,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,212,],
+[0,1490,2350,3079,3771,4353,4769,5095,5358,5547,5728,5890,5955,5976,5958,5945,5866,5765,5735,5609,5513,5337,5343,5317,5077,5091,4798,4810,4919,4978,4499,4578,4484,4168,4248,4373,3657,3882,4085,4016,3690,4427,4146,4484,3983,3234,3006,0,0,129,],
+[0,435,936,1661,2458,3170,4008,4694,5391,6116,6739,7526,8085,8689,9307,9828,10492,11121,11576,12150,12753,13372,13847,14350,14756,15277,15530,16139,16304,16883,17338,17591,17911,17975,18332,18309,18669,18997,19150,19455,19542,19460,19672,19817,20172,20048,20334,20321,20405,20090,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,],
+];
 
 #[derive(Clone)]
 pub struct RDOOutput {
@@ -55,6 +105,149 @@ pub struct RDOPartitionOutput {
   pub ref_frame: usize,
   pub mv: MotionVector,
   pub skip: bool
+}
+
+const rdo_num_bins: usize =  50;
+const rdo_max_bin: usize = 10000;
+const RATE_EST_MAX_BIN: usize = 50000;
+const rdo_bin_size: u64 = (rdo_max_bin / rdo_num_bins) as u64;
+const RATE_EST_BIN_SIZE: u64 = (RATE_EST_MAX_BIN / rdo_num_bins) as u64;
+
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct RDOTracker {
+  rate_bins: Vec<Vec<u64>>,
+  rate_counts: Vec<Vec<u64>>,
+  dist_bins: Vec
+        <Vec<u64>>,
+  dist_counts: Vec<Vec<u64>>
+}
+
+impl RDOTracker {
+  pub fn new() -> RDOTracker {
+    RDOTracker {
+      rate_bins: vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL],
+      rate_counts: vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL],
+      dist_bins: vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL],
+      dist_counts: vec![vec![0; rdo_num_bins]; TxSize::TX_SIZES_ALL]
+    }
+  }
+  fn merge_array(new: &mut Vec<u64>, old: &Vec<u64>) {
+    for (n, o) in new.iter_mut().zip(old.iter()) {
+      *n += o;
+    }
+  }
+  fn merge_2d_array(new: &mut Vec<Vec<u64>>, old: &Vec<Vec<u64>>) {
+    for (n, o) in new.iter_mut().zip(old.iter()) {
+      RDOTracker::merge_array(n, o);
+    }
+  }
+  pub fn merge_in(&mut self, input: &RDOTracker) {
+    RDOTracker::merge_2d_array(&mut self.rate_bins, &input.rate_bins);
+    RDOTracker::merge_2d_array(&mut self.rate_counts, &input.rate_counts);
+    RDOTracker::merge_2d_array(&mut self.dist_bins, &input.dist_bins);
+    RDOTracker::merge_2d_array(&mut self.dist_counts, &input.dist_counts);
+  }
+  pub fn add_rate(&mut self, ts: TxSize, fast_distortion: u64, rate: u64) {
+    if fast_distortion != 0 {
+      let bs_index = ts as usize;
+      let bin_idx_tmp = (((fast_distortion as i64 - (RATE_EST_BIN_SIZE as i64) / 2)) as u64 / RATE_EST_BIN_SIZE) as usize;
+      let bin_idx = if bin_idx_tmp >= rdo_num_bins {
+        rdo_num_bins - 1
+      } else {
+        bin_idx_tmp
+      };
+      self.rate_counts[bs_index][bin_idx] += 1;
+      self.rate_bins[bs_index][bin_idx] += rate;
+    }
+  }
+  pub fn estimate_rate(&self, ts: TxSize, fast_distortion: u64) -> u64 {
+      let bs_index = ts as usize;
+      let bin_idx_down = ((fast_distortion) / RATE_EST_BIN_SIZE).min((rdo_num_bins - 2) as u64);
+      let bin_idx_up = (bin_idx_down + 1).min((rdo_num_bins - 1) as u64);
+      let x0 = (bin_idx_down * RATE_EST_BIN_SIZE) as i64;
+      let x1 = (bin_idx_up * RATE_EST_BIN_SIZE) as i64;
+      let y0 = RDO_RATE_TABLE[bs_index][bin_idx_down as usize] as i64;
+      let y1 = RDO_RATE_TABLE[bs_index][bin_idx_up as usize] as i64;
+      let slope = ((y1 - y0) << 8) / (x1 - x0);
+      (y0 + (((fast_distortion as i64 - x0) * slope) >> 8)) as u64
+  }
+  pub fn add_distortion(&mut self, ts: TxSize, fast_distortion: u64, distortion: u64) {
+    if fast_distortion != 0 {
+      let bs_index = ts as usize;
+      let bin_idx_tmp = (fast_distortion / rdo_bin_size) as usize;
+      let bin_idx = if bin_idx_tmp >= rdo_num_bins {
+        rdo_num_bins - 1
+      } else {
+        bin_idx_tmp
+      };
+      self.dist_counts[bs_index][bin_idx] += 1;
+      self.dist_bins[bs_index][bin_idx] += distortion;
+    }
+  }
+  pub fn estimate_distortion(&self, ts: TxSize, fast_distortion: u64) -> u64 {
+    //println!("estimating distortion");
+    if fast_distortion != 0 {
+      let bs_index = ts as usize;
+      let bin_idx_tmp = (fast_distortion / rdo_bin_size) as usize;
+      let bin_idx = if bin_idx_tmp >= rdo_num_bins {
+        rdo_num_bins - 1
+      } else {
+        bin_idx_tmp
+      };
+      //println!("bs/bin index: {} {}", bs_index, bin_idx);
+        //let dist = self.dist_bins[bs_index][bin_idx] / self.dist_counts[bs_index][bin_idx];
+      let dist = RDO_DISTORTION_TABLE[bs_index][bin_idx];
+      //println!("estimated distortion: {}", dist);
+      dist
+    } else {
+      0
+    }
+  }
+  pub fn print_distortion(&self) {
+    let bs_index = TxSize::TX_32X32 as usize;
+    for (bin_idx, (dist_total, dist_count)) in self.dist_bins[bs_index].iter().zip(self.dist_counts[bs_index].iter()).enumerate() {
+      if *dist_count != 0 {
+        println!("{} {}", bin_idx, dist_total / dist_count);
+      }
+    }
+  }
+  pub fn print_rate(&self) {
+    let bs_index = 0;
+    for (bin_idx, (rate_total, rate_count)) in self.rate_bins[bs_index].iter().zip(self.rate_counts[bs_index].iter()).enumerate() {
+      if *rate_count != 0 {
+        println!("{} {}", bin_idx, rate_total / rate_count);
+      }
+    }
+  }
+  pub fn print_code(&self) {
+    println!("pub static RDO_DISTORTION_TABLE: [[u64; rdo_num_bins]; TxSize::TX_SIZES_ALL] = [");
+    for bs_index in 0..TxSize::TX_SIZES_ALL {
+      print!("[");
+      for (bin_idx, (dist_total, dist_count)) in self.dist_bins[bs_index].iter().zip(self.dist_counts[bs_index].iter()).enumerate() {
+        if *dist_count != 0 {
+          print!("{},", dist_total / dist_count);
+        } else {
+          print!("0,");
+        }
+      }
+      println!("],");
+    }
+    println!("];");
+    println!("pub static RDO_RATE_TABLE: [[u64; rdo_num_bins]; TxSize::TX_SIZES_ALL] = [");
+    for bs_index in 0..TxSize::TX_SIZES_ALL {
+        print!("[");
+        for (bin_idx, (rate_total, rate_count)) in self.rate_bins[bs_index].iter().zip(self.rate_counts[bs_index].iter()).enumerate() {
+            if *rate_count != 0 {
+                print!("{},", rate_total / rate_count);
+            } else {
+                print!("0,");
+            }
+        }
+        println!("],");
+    }
+    println!("];");
+  }
 }
 
 #[allow(unused)]
@@ -126,6 +319,40 @@ fn sse_wxh(src1: &PlaneSlice<'_>, src2: &PlaneSlice<'_>, w: usize, h: usize) -> 
   sse
 }
 
+pub fn compute_fast_distortion(
+  refr: PlaneSlice, pred: PlaneSlice, w_y: usize, h_y: usize) -> u64 {
+    let mut sad = 0 as u32;
+    let mut plane_org = pred;
+    let mut plane_ref = refr;
+
+    for _r in 0..h_y {
+        {
+            let slice_org = plane_org.as_slice_w_width(w_y);
+            let slice_ref = plane_ref.as_slice_w_width(w_y);
+            sad += slice_org.iter().zip(slice_ref).map(|(&a, &b)| (a as i32 - b as i32).abs() as u32).sum::<u32>();
+        }
+        plane_org.y += 1;
+        plane_ref.y += 1;
+    }
+  sad as u64
+}
+
+fn estimate_rd_cost(fi: &FrameInvariants, bit_depth: usize,
+  bit_cost: u32, estimated_distortion: u64
+) -> (u64, f64) {
+  let q = dc_q(fi.config.quantizer, bit_depth) as f64;
+
+  // Convert q into Q0 precision, given that libaom quantizers are Q3
+  let q0 = q / 8.0_f64;
+
+  // Lambda formula from doc/theoretical_results.lyx in the daala repo
+  // Use Q0 quantizer since lambda will be applied to Q0 pixel domain
+  let lambda = q0 * q0 * std::f64::consts::LN_2 / 6.0;
+  // Compute rate
+  let rate = (bit_cost as f64) / ((1 << OD_BITRES) as f64);
+  (estimated_distortion, (estimated_distortion as f64) + lambda * rate)
+}
+
 pub fn get_lambda(fi: &FrameInvariants, bit_depth: usize) -> f64 {
   let q = dc_q(fi.config.quantizer, bit_depth) as f64;
 
@@ -180,7 +407,8 @@ fn compute_rd_cost(
   // Add chroma distortion only when it is available
   if w_uv > 0 && h_uv > 0 {
     for p in 1..3 {
-      let po = bo.plane_offset(&fs.input.planes[p].cfg);
+        let po = bo.plane_offset(&fs.input.planes[p].cfg);
+
 
       distortion += sse_wxh(
         &fs.input.planes[p].slice(&po),
@@ -194,7 +422,7 @@ fn compute_rd_cost(
   // Compute rate
   let rate = (bit_cost as f64) / ((1 << OD_BITRES) as f64);
 
-  (distortion as f64) + lambda * rate
+  (distortion,(distortion as f64) + lambda * rate)
 }
 
 pub fn rdo_tx_size_type(seq: &Sequence, fi: &FrameInvariants,
@@ -239,7 +467,16 @@ pub fn rdo_mode_decision(
   let mut best_rd = std::f64::MAX;
   let mut best_ref_frame = INTRA_FRAME;
   let mut best_mv = MotionVector { row: 0, col: 0 };
-
+  let rdo_type = if fi.config.speed == 0 {
+    RDOType::Accurate
+  } else { RDOType::Fast };
+  // these rules follow TX_MODE_LARGEST
+  let tx_size = match bsize {
+    BlockSize::BLOCK_4X4 => TxSize::TX_4X4,
+    BlockSize::BLOCK_8X8 => TxSize::TX_8X8,
+    BlockSize::BLOCK_16X16 => TxSize::TX_16X16,
+    _ => TxSize::TX_32X32
+  };
   // Get block luma and chroma dimensions
   let w = bsize.width();
   let h = bsize.height();
@@ -312,11 +549,12 @@ pub fn rdo_mode_decision(
         let tell = wr.tell_frac();
 
         encode_block_a(seq, cw, wr, bsize, bo, skip);
-        encode_block_b(seq, fi, fs, cw, wr, luma_mode, chroma_mode,
-          ref_frame, mv, bsize, bo, skip, seq.bit_depth, cfl, tx_size, tx_type, mode_context, &mv_stack);
-
+        let tell_coeffs = wr.tell_frac();
+        let (fast_distortion, estimated_distortion) = encode_block_b(fi, fs, cw, wr, luma_mode, chroma_mode, ref_frame, mv, bsize, bo, skip, seq.bit_depth, cfl, tx_size, tx_type, mode_context, &mv_stack, rdo_type);
+        let cost_coeffs = wr.tell_frac() - tell_coeffs;
         let cost = wr.tell_frac() - tell;
-        let rd = compute_rd_cost(
+        let (distortion, rd) = match rdo_type {
+          RDOType::Accurate => compute_rd_cost(
           fi,
           fs,
           w,
@@ -325,9 +563,14 @@ pub fn rdo_mode_decision(
           bo,
           cost,
           seq.bit_depth,
-          false
-        );
-
+          false,
+          ),
+          RDOType::Fast => estimate_rd_cost(fi, seq.bit_depth, cost, estimated_distortion)
+        };
+        //let (distortion2, rd2) = estimate_rd_cost(fi, seq.bit_depth, cost, estimated_distortion);
+        //println!("{} {}", distortion, estimated_distortion);
+        fs.t.add_distortion(tx_size, fast_distortion, distortion);
+        fs.t.add_rate(tx_size, fast_distortion, cost_coeffs as u64);
         if rd < best_rd {
           best_rd = rd;
           best_mode_luma = luma_mode;
@@ -449,12 +692,12 @@ pub fn rdo_tx_type_decision(
     }  else {
       let cfl = CFLParams::new(); // Unused
       write_tx_blocks(
-        fi, fs, cw, wr, mode, mode, bo, bsize, tx_size, tx_type, false, bit_depth, cfl, true
+        fi, fs, cw, wr, mode, mode, bo, bsize, tx_size, tx_type, false, bit_depth, cfl, true, RDOType::Accurate
       );
     }
 
     let cost = wr.tell_frac() - tell;
-    let rd = compute_rd_cost(
+    let (_, rd) = compute_rd_cost(
       fi,
       fs,
       w,
@@ -690,3 +933,28 @@ pub fn rdo_cdef_decision(sbo: &SuperBlockOffset, fi: &FrameInvariants,
     best_index
 }
 
+pub fn get_fast_distortion_tx_block(
+  _fi: &FrameInvariants, fs: &mut FrameState, _cw: &mut ContextWriter,
+  w: &mut dyn Writer, p: usize, _bo: &BlockOffset, mode: PredictionMode,
+  tx_size: TxSize, _tx_type: TxType, _plane_bsize: BlockSize, po: &PlaneOffset,
+  skip: bool, bit_depth: usize, ac: &[i16], alpha: i16
+) -> u64 {
+  let rec = &mut fs.rec.planes[p];
+
+  if mode.is_intra() {
+    mode.predict_intra(&mut rec.mut_slice(po), tx_size, bit_depth, &ac, alpha);
+  }
+
+  let fast_distortion = compute_fast_distortion(fs.input.planes[p].slice(po), rec.slice(po), tx_size.width(), tx_size.height());
+
+  fast_distortion
+}
+
+#[test]
+fn estimate_rate_test() {
+    let t = RDOTracker::new();
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, 0), 573);
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, RATE_EST_BIN_SIZE*1), 715);
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, RATE_EST_BIN_SIZE*2), 691);
+    assert_eq!(t.estimate_rate(TxSize::TX_4X4, RATE_EST_BIN_SIZE/2), 643);
+}

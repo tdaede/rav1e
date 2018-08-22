@@ -57,7 +57,9 @@ impl FromCli for EncoderConfig {
                 .possible_values(&Tune::variants())
                 .default_value("psnr")
                 .case_insensitive(true))
-            .get_matches();
+            .arg(Arg::with_name("train-rdo")
+                .long("train-rdo"))
+                .get_matches();
 
 
         let io = EncoderIO {
@@ -78,7 +80,8 @@ impl FromCli for EncoderConfig {
             limit: matches.value_of("LIMIT").unwrap().parse().unwrap(),
             quantizer: matches.value_of("QP").unwrap().parse().unwrap(),
             speed: matches.value_of("SPEED").unwrap().parse().unwrap(),
-            tune: matches.value_of("TUNE").unwrap().parse().unwrap()
+            tune: matches.value_of("TUNE").unwrap().parse().unwrap(),
+            train_rdo: matches.is_present("train-rdo"),
         };
 
         // Validate arguments
