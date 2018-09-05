@@ -388,8 +388,7 @@ impl FrameInvariants {
             config,
             ref_frames: [0; INTER_REFS_PER_FRAME],
             rec_buffer: ReferenceFramesSet::new(),
-            deblock: Default::default()
-            loop_filter: Default::default(),
+            deblock: Default::default(),
         }
     }
 
@@ -1302,7 +1301,7 @@ pub fn encode_block_b(seq: &Sequence, fi: &FrameInvariants, fs: &mut FrameState,
                  ref_frame: usize, mv: MotionVector,
                  bsize: BlockSize, bo: &BlockOffset, skip: bool, bit_depth: usize,
                  cfl: CFLParams, tx_size: TxSize, tx_type: TxType,
-                 mode_context: usize, mv_stack: &Vec<CandidateMV>, rdo_type: RDOType ) -> (u64, u64) {
+                 mode_context: usize, mv_stack: &Vec<CandidateMV>, rdo_type: RDOType) -> (u64, u64) {
     let is_inter = !luma_mode.is_intra();
     if is_inter { assert!(luma_mode == chroma_mode); };
   let mut fast_distortion: u64 = 0;
@@ -1452,7 +1451,7 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
                        cw: &mut ContextWriter, w: &mut dyn Writer,
                        luma_mode: PredictionMode, chroma_mode: PredictionMode, bo: &BlockOffset,
                        bsize: BlockSize, tx_size: TxSize, tx_type: TxType, skip: bool, bit_depth: usize,
-                       cfl: &CFLParams, luma_only: bool, rdo_type: RDOType) -> (u64, u64) {
+                       cfl: CFLParams, luma_only: bool, rdo_type: RDOType) -> (u64, u64) {
     let bw = bsize.width_mi() / tx_size.width_mi();
     let bh = bsize.height_mi() / tx_size.height_mi();
   let mut fast_distortion = 0;
@@ -1488,69 +1487,70 @@ pub fn write_tx_blocks(fi: &FrameInvariants, fs: &mut FrameState,
         }
     }
 
-    if luma_only { return };
+    if !luma_only {
 
-    // TODO: these are only valid for 4:2:0
-    let uv_tx_size = match bsize {
+      // TODO: these are only valid for 4:2:0
+      let uv_tx_size = match bsize {
         BlockSize::BLOCK_4X4 | BlockSize::BLOCK_8X8 => TxSize::TX_4X4,
         BlockSize::BLOCK_16X16 => TxSize::TX_8X8,
         BlockSize::BLOCK_32X32 => TxSize::TX_16X16,
         _ => TxSize::TX_32X32
-    };
+      };
 
-    let mut bw_uv = (bw * tx_size.width_mi()) >> xdec;
-    let mut bh_uv = (bh * tx_size.height_mi()) >> ydec;
+      let mut bw_uv = (bw * tx_size.width_mi()) >> xdec;
+      let mut bh_uv = (bh * tx_size.height_mi()) >> ydec;
 
-    if (bw_uv == 0 || bh_uv == 0) && has_chroma(bo, bsize, xdec, ydec) {
+      if (bw_uv == 0 || bh_uv == 0) && has_chroma(bo, bsize, xdec, ydec) {
         bw_uv = 1;
         bh_uv = 1;
-    }
+      }
 
-    bw_uv /= uv_tx_size.width_mi();
-    bh_uv /= uv_tx_size.height_mi();
+      bw_uv /= uv_tx_size.width_mi();
+      bh_uv /= uv_tx_size.height_mi();
 
-    let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
+      let plane_bsize = get_plane_block_size(bsize, xdec, ydec);
 
-    if chroma_mode.is_cfl() {
-      luma_ac(ac, fs, bo, bsize);
-    }
+      if chroma_mode.is_cfl() {
+        luma_ac(ac, fs, bo, bsize);
+      }
 
-    if bw_uv > 0 && bh_uv > 0 {
+      if bw_uv > 0 && bh_uv > 0 {
         let uv_tx_type = uv_intra_mode_to_tx_type_context(chroma_mode);
         fs.qc.update(fi.config.quantizer, uv_tx_size, true, bit_depth);
 
         for p in 1..3 {
-            let alpha = cfl.alpha(p - 1);
-            for by in 0..bh_uv {
-                for bx in 0..bw_uv {
-                    let tx_bo =
-                        BlockOffset {
-                            x: bo.x + ((bx * uv_tx_size.width_mi()) << xdec) -
-                                ((bw * tx_size.width_mi() == 1) as usize),
-                            y: bo.y + ((by * uv_tx_size.height_mi()) << ydec) -
-                                ((bh * tx_size.height_mi() == 1) as usize)
-                        };
+          let alpha = cfl.alpha(p - 1);
+          for by in 0..bh_uv {
+            for bx in 0..bw_uv {
+              let tx_bo =
+                BlockOffset {
+                  x: bo.x + ((bx * uv_tx_size.width_mi()) << xdec) -
+                    ((bw * tx_size.width_mi() == 1) as usize),
+                  y: bo.y + ((by * uv_tx_size.height_mi()) << ydec) -
+                    ((bh * tx_size.height_mi() == 1) as usize)
+                };
 
-                    let mut po = bo.plane_offset(&fs.input.planes[p].cfg);
-                    po.x += bx * uv_tx_size.width();
-                    po.y += by * uv_tx_size.height();
-                  match rdo_type {
-                    RDOType::Fast => {
-                      let fast_distortion_block = get_fast_distortion_tx_block(
-                        fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
-                        plane_bsize, &po, skip, bit_depth, ac, alpha);
-                      fast_distortion += fast_distortion_block;
-                    },
-                    RDOType::Accurate => {
-                      let (_, fast_distortion_block) = encode_tx_block(
-                        fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
-                        plane_bsize, &po, skip, bit_depth, ac, alpha);
-                      fast_distortion += fast_distortion_block;
-                    }
-                  }
+              let mut po = bo.plane_offset(&fs.input.planes[p].cfg);
+              po.x += bx * uv_tx_size.width();
+              po.y += by * uv_tx_size.height();
+              match rdo_type {
+                RDOType::Fast => {
+                  let fast_distortion_block = get_fast_distortion_tx_block(
+                    fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
+                    plane_bsize, &po, skip, bit_depth, ac, alpha);
+                  fast_distortion += fast_distortion_block;
+                },
+                RDOType::Accurate => {
+                  let (_, fast_distortion_block) = encode_tx_block(
+                    fi, fs, cw, w, p, &tx_bo, chroma_mode, uv_tx_size, uv_tx_type,
+                    plane_bsize, &po, skip, bit_depth, ac, alpha);
+                  fast_distortion += fast_distortion_block;
                 }
+              }
             }
+          }
         }
+      }
     }
     if rdo_type == RDOType::Fast{
       // look up rate and distortion in table
