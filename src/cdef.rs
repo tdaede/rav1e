@@ -330,23 +330,6 @@ pub fn cdef_filter_superblock(fi: &FrameInvariants,
 
   if cdef_y_strength == 0 && cdef_uv_strength == 0 {
     // bypass filtering for speed
-    for p in 0..3 {
-      let mut out_plane = &mut out_frame.planes[p];
-      let out_po = sbo.plane_offset(&out_plane.cfg);
-      let mut in_plane = &mut in_frame.planes[p];
-      let in_po = sbo.plane_offset(&in_plane.cfg);
-      let xdec = in_plane.cfg.xdec;
-      let ydec = in_plane.cfg.ydec;
-
-      let in_stride = in_plane.cfg.stride;
-      let mut in_slice = &mut in_plane.mut_slice(&in_po);
-      let out_stride = out_plane.cfg.stride;
-      let mut out_slice = &mut out_plane.mut_slice(&out_po);
-      for y in 0..(64>>ydec)
-      {
-        out_slice.offset_as_mutable(0,y)[..(64>>xdec)].copy_from_slice(&in_slice.offset(2,y+2)[..(64>>xdec)]);
-      }
-    }
     return
   }
 
