@@ -2511,7 +2511,7 @@ fn encode_partition_topdown(fi: &FrameInvariants, fs: &mut FrameState,
         if cbh == bsh/2 && cbw == bsw { split_horz = true; }
     }
 
-    if must_split && (!split_vert && !split_horz) {
+    if must_split && (!split_vert && !split_horz) || bsize.greater_than(BlockSize::BLOCK_32X32) {
         // Oversized blocks are split automatically
         partition = PartitionType::PARTITION_SPLIT;
     } else if must_split || (bsize > fi.min_partition_size && is_square) {
