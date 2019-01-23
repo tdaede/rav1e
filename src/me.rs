@@ -192,9 +192,9 @@ pub fn motion_estimation(
       let mode = PredictionMode::NEWMV;
       let mut tmp_plane = Plane::new(blk_w, blk_h, 0, 0, 0, 0);
 
-      let mut steps = vec![8, 4, 2];
+      let mut steps = vec![8, 4];
       if fi.allow_high_precision_mv {
-        steps.push(1);
+        //steps.push(1);
       }
 
       for step in steps {
