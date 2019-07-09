@@ -752,8 +752,10 @@ impl<T: Pixel> FrameInvariants<T> {
     }
 
     fi.primary_ref_frame =
-      if let Some(ref rec) = fi.rec_buffer.frames[fi.ref_frames[ref_in_previous_group.to_index()] as usize] {
-        (ref_in_previous_group.to_index()) as u32
+      if let Some(_) = fi.rec_buffer.frames[fi.ref_frames[ref_in_previous_group.to_index()] as usize] {
+        ref_in_previous_group.to_index() as u32
+      } else if let Some(_) = fi.rec_buffer.frames[fi.ref_frames[second_ref_frame.to_index()] as usize] {
+        second_ref_frame.to_index() as u32
       } else {
         PRIMARY_REF_NONE
       };
