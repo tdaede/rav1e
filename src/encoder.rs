@@ -692,13 +692,6 @@ impl<T: Pixel> FrameInvariants<T> {
     };
     let ref_in_previous_group = LAST3_FRAME;
 
-    // reuse probability estimates from previous frames only in top level frames
-    fi.primary_ref_frame = if fi.pyramid_level > 2 {
-      PRIMARY_REF_NONE
-    } else {
-      (ref_in_previous_group.to_index()) as u32
-    };
-
     if fi.pyramid_level == 0 {
       // level 0 has no forward references
       // default to last P frame
@@ -757,6 +750,14 @@ impl<T: Pixel> FrameInvariants<T> {
         false
       };
     }
+
+    fi.primary_ref_frame =
+      if let Some(ref rec) = fi.rec_buffer.frames[fi.ref_frames[ref_in_previous_group.to_index()] as usize] {
+        (ref_in_previous_group.to_index()) as u32
+      } else {
+        PRIMARY_REF_NONE
+      };
+
 
     fi.reference_mode = if inter_cfg.multiref && fi.idx_in_group_output != 0 {
       ReferenceMode::SELECT
