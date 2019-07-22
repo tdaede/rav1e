@@ -551,10 +551,7 @@ fn luma_chroma_mode_rdo<T: Pixel> (luma_mode: PredictionMode,
     }
   };
 
-  // Don't skip when using intra modes
-  if !luma_mode_is_intra {
-    chroma_rdo(true);
-  };
+  chroma_rdo(true);
   chroma_rdo(false);
 }
 
