@@ -465,9 +465,6 @@ fn luma_chroma_mode_rdo<T: Pixel> (luma_mode: PredictionMode,
   luma_mode_is_intra: bool,
   mode_context: usize,
   mv_stack: &ArrayVec<[CandidateMV; 9]>) {
-  let (tx_size, mut tx_type) = rdo_tx_size_type(
-    fi, ts, cw, bsize, tile_bo, luma_mode, ref_frames, mvs, false,
-  );
 
   let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
 
@@ -475,6 +472,9 @@ fn luma_chroma_mode_rdo<T: Pixel> (luma_mode: PredictionMode,
 
   // Find the best chroma prediction mode for the current luma prediction mode
   let mut chroma_rdo = |skip: bool| {
+    let (tx_size, mut tx_type) = rdo_tx_size_type(
+      fi, ts, cw, bsize, tile_bo, luma_mode, ref_frames, mvs, skip,
+    );
     for &chroma_mode in mode_set_chroma.iter() {
       let wr = &mut WriterCounter::new();
       let tell = wr.tell_frac();
