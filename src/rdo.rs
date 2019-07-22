@@ -547,6 +547,7 @@ fn luma_chroma_mode_rdo<T: Pixel> (luma_mode: PredictionMode,
       }
 
       cw.rollback(cw_checkpoint);
+      if distortion == 0 { return; }
     }
   };
 
