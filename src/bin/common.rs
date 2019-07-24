@@ -324,15 +324,18 @@ pub fn parse_cli() -> Result<CliOptions, CliError> {
     }
   }
 
+  let rec = match matches.value_of("RECONSTRUCTION") {
+    Some(f) => Some(Box::new(File::create(&f).map_err(|e| e.context("Cannot create reconstruction file"))?) as Box<dyn Write>),
+    None => None
+  };
+
   let io = EncoderIO {
     input: match matches.value_of("INPUT").unwrap() {
       "-" => Box::new(io::stdin()) as Box<dyn Read>,
       f => Box::new(File::open(&f).map_err(|e| e.context("Cannot open input file"))?) as Box<dyn Read>
     },
     output: create_muxer(matches.value_of("OUTPUT").unwrap()),
-    rec: matches
-      .value_of("RECONSTRUCTION")
-      .map(|f| Box::new(File::create(&f).unwrap()) as Box<dyn Write>)
+    rec
   };
 
   Ok(CliOptions {
