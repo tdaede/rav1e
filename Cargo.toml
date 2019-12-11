@@ -154,3 +154,6 @@ members = [".", "ivf", "crates/nasm_rs"]
 
 [package.metadata.docs.rs]
 no-default-features = true
+
+[replace]
+"rayon:1.2.0" = { git = 'https://github.com/nikomatsakis/rayon.git', branch = 'latch-target-thread' }
