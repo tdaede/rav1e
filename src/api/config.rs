@@ -481,11 +481,11 @@ impl SpeedSettings {
     true
   }
 
-  const fn cdef_preset(_speed: usize) -> bool {
-    speed <= 9
+  const fn cdef_preset(speed: usize) -> bool {
+    speed <= 10
   }
 
-  const fn lrf_preset(_speed: usize) -> bool {
+  const fn lrf_preset(speed: usize) -> bool {
     speed <= 9
   }
 
