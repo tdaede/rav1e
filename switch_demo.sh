@@ -1,7 +1,5 @@
 #!/bin/bash
 
-set -e
-
 cargo build --release
 
 parallel target/release/rav1e --bitrate {} -s 7 -l 1800 --tiles 16 ~/Videos/DOTA2_480p.y4m --low-latency -o dota_switch_{}.ivf --switch-frame-interval 30 --rdo-lookahead-frames=1 --min-keyint=240 --keyint=240 ::: 400 1000
