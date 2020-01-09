@@ -416,6 +416,7 @@ impl<T: Pixel> ContextInner<T> {
     cmp::min(next_detected.unwrap(), next_limit)
   }
 
+  #[hawktracer(set_frame_properties)]
   fn set_frame_properties(
     &mut self, output_frameno: u64,
   ) -> Result<(), EncoderStatus> {
