@@ -154,3 +154,6 @@ members = [".", "ivf", "crates/nasm_rs"]
 
 [package.metadata.docs.rs]
 no-default-features = true
+
+[patch.crates-io]
+rayon = { path = "/home/thomas/sandbox/rayon" }
