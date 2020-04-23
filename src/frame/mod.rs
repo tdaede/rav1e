@@ -72,8 +72,8 @@ pub(crate) trait FramePad {
 
 impl<T: Pixel> FramePad for Frame<T> {
   fn pad(&mut self, w: usize, h: usize) {
-    for p in self.planes.iter_mut() {
-      p.pad(w, h);
+    for pli in 0..1 {
+      self.planes[pli].pad(w, h);
     }
   }
 }
