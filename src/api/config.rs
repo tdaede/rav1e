@@ -157,14 +157,14 @@ impl EncoderConfig {
       max_key_frame_interval: 240,
       min_quantizer: 0,
       reservoir_frame_delay: None,
-      low_latency: false,
+      low_latency: true,
       quantizer: 100,
       bitrate: 0,
       tune: Tune::default(),
       tile_cols: 0,
       tile_rows: 0,
       tiles: 0,
-      rdo_lookahead_frames: 40,
+      rdo_lookahead_frames: 1,
       speed_settings: SpeedSettings::from_preset(speed),
     }
   }
