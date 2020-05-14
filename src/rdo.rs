@@ -336,8 +336,10 @@ fn compute_distortion<T: Pixel>(
     }
 
     // Add chroma distortion only when it is available
-    if fi.config.chroma_sampling != ChromaSampling::Cs400 &&
-       w_uv > 0 && h_uv > 0 {
+    if fi.config.chroma_sampling != ChromaSampling::Cs400
+      && w_uv > 0
+      && h_uv > 0
+    {
       for p in 1..3 {
         let input_region = ts.input_tile.planes[p].subregion(area);
         let rec_region = ts.rec.planes[p].subregion(area);
@@ -401,8 +403,10 @@ fn compute_tx_distortion<T: Pixel>(
     }
 
     // Add chroma distortion only when it is available
-    if fi.config.chroma_sampling != ChromaSampling::Cs400 &&
-       w_uv > 0 && h_uv > 0 {
+    if fi.config.chroma_sampling != ChromaSampling::Cs400
+      && w_uv > 0
+      && h_uv > 0
+    {
       for p in 1..3 {
         let input_region = ts.input_tile.planes[p].subregion(area);
         let rec_region = ts.rec.planes[p].subregion(area);
@@ -684,7 +688,8 @@ fn luma_chroma_mode_rdo<T: Pixel>(
 ) {
   let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
 
-  let is_chroma_block = has_chroma(tile_bo, bsize, xdec, ydec, fi.sequence.chroma_sampling);
+  let is_chroma_block =
+    has_chroma(tile_bo, bsize, xdec, ydec, fi.sequence.chroma_sampling);
 
   // Find the best chroma prediction mode for the current luma prediction mode
   let mut chroma_rdo = |skip: bool| -> bool {
@@ -832,7 +837,8 @@ pub fn rdo_mode_decision<T: Pixel>(
     PartitionParameters::default()
   };
 
-  let is_chroma_block = has_chroma(tile_bo, bsize, xdec, ydec, fi.sequence.chroma_sampling);
+  let is_chroma_block =
+    has_chroma(tile_bo, bsize, xdec, ydec, fi.sequence.chroma_sampling);
 
   if !best.skip {
     best = intra_frame_rdo_mode_decision(
@@ -1452,7 +1458,8 @@ pub fn rdo_tx_type_decision<T: Pixel>(
   let mut best_rd = std::f64::MAX;
 
   let PlaneConfig { xdec, ydec, .. } = ts.input.planes[1].cfg;
-  let is_chroma_block = has_chroma(tile_bo, bsize, xdec, ydec, fi.sequence.chroma_sampling);
+  let is_chroma_block =
+    has_chroma(tile_bo, bsize, xdec, ydec, fi.sequence.chroma_sampling);
 
   let is_inter = !mode.is_intra();
 
@@ -1881,7 +1888,11 @@ pub fn rdo_loop_decision<T: Pixel>(
   ts: &mut TileStateMut<'_, T>, cw: &mut ContextWriter, w: &mut dyn Writer,
   deblock_p: bool,
 ) {
-  let planes = if fi.sequence.chroma_sampling == ChromaSampling::Cs400 { 1 } else { MAX_PLANES };
+  let planes = if fi.sequence.chroma_sampling == ChromaSampling::Cs400 {
+    1
+  } else {
+    MAX_PLANES
+  };
   assert!(fi.sequence.enable_cdef || fi.sequence.enable_restoration);
   // Determine area of optimization: Which plane has the largest LRUs?
   // How many LRUs for each?

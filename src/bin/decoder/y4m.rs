@@ -55,16 +55,16 @@ impl Decoder for y4m::Decoder<'_, Box<dyn Read>> {
           bytes,
         );
         if cfg.chroma_sampling != Cs400 {
-            f.planes[1].copy_from_raw_u8(
-              frame.get_u_plane(),
-              chroma_width * bytes,
-              bytes,
-            );
-            f.planes[2].copy_from_raw_u8(
-              frame.get_v_plane(),
-              chroma_width * bytes,
-              bytes,
-            );
+          f.planes[1].copy_from_raw_u8(
+            frame.get_u_plane(),
+            chroma_width * bytes,
+            bytes,
+          );
+          f.planes[2].copy_from_raw_u8(
+            frame.get_v_plane(),
+            chroma_width * bytes,
+            bytes,
+          );
         }
         f
       })

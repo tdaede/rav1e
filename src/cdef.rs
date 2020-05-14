@@ -426,7 +426,9 @@ pub fn cdef_padded_frame_copy<T: Pixel>(in_frame: &Frame<T>) -> Frame<u16> {
     let rec_h = in_frame.planes[p].cfg.height;
 
     /* Its a monochrome frame but we have no way to signal that */
-    if rec_w == 0 || rec_h == 0 { break; };
+    if rec_w == 0 || rec_h == 0 {
+      break;
+    };
 
     let mut out_region = out.planes[p].region_mut(Area::Rect {
       x: -2,

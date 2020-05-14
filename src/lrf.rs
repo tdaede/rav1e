@@ -1435,7 +1435,8 @@ impl RestorationState {
     fi: &FrameInvariants<T>,
   ) {
     let cdeffed = out.clone();
-    let planes = if fi.sequence.chroma_sampling == Cs400 { 1 } else { MAX_PLANES };
+    let planes =
+      if fi.sequence.chroma_sampling == Cs400 { 1 } else { MAX_PLANES };
 
     // unlike the other loop filters that operate over the padded
     // frame dimensions, restoration filtering and source pixel

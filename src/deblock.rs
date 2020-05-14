@@ -1651,7 +1651,14 @@ pub fn deblock_filter_optimize<T: Pixel, U: Pixel>(
   } else {
     // Deblocking happens in 4x4 (luma) units; luma x,y are clipped to
     // the *crop frame* of the entire frame by 4x4 block.
-    sse_optimize(rec, input, blocks, crop_w, crop_h, fi.sequence.bit_depth,
-                 fi.sequence.chroma_sampling == Cs400)
+    sse_optimize(
+      rec,
+      input,
+      blocks,
+      crop_w,
+      crop_h,
+      fi.sequence.bit_depth,
+      fi.sequence.chroma_sampling == Cs400,
+    )
   }
 }

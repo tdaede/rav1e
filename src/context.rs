@@ -544,7 +544,9 @@ pub fn has_chroma(
   bo: TileBlockOffset, bsize: BlockSize, subsampling_x: usize,
   subsampling_y: usize, chroma_sampling: ChromaSampling,
 ) -> bool {
-  if chroma_sampling == ChromaSampling::Cs400 { return false };
+  if chroma_sampling == ChromaSampling::Cs400 {
+    return false;
+  };
 
   let bw = bsize.width_mi();
   let bh = bsize.height_mi();
@@ -1685,8 +1687,8 @@ impl<'a> BlockContext<'a> {
   }
 
   pub fn reset_skip_context(
-    &mut self, bo: TileBlockOffset, bsize: BlockSize, xdec: usize, ydec: usize,
-    cs: ChromaSampling,
+    &mut self, bo: TileBlockOffset, bsize: BlockSize, xdec: usize,
+    ydec: usize, cs: ChromaSampling,
   ) {
     let num_planes = if cs == ChromaSampling::Cs400 { 1 } else { 3 };
     let nplanes = if bsize >= BLOCK_8X8 {
@@ -2457,8 +2459,7 @@ impl<'a> ContextWriter<'a> {
   pub fn write_use_palette_mode(
     &mut self, w: &mut dyn Writer, enable: bool, bsize: BlockSize,
     bo: TileBlockOffset, luma_mode: PredictionMode,
-    chroma_mode: PredictionMode, xdec: usize, ydec: usize,
-    cs: ChromaSampling,
+    chroma_mode: PredictionMode, xdec: usize, ydec: usize, cs: ChromaSampling,
   ) {
     if enable {
       unimplemented!(); // TODO

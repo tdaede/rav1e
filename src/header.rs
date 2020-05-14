@@ -867,7 +867,11 @@ impl<W: io::Write> UncompressedHeader for BitWriter<W, BigEndian> {
   fn write_deblock_filter_b<T: Pixel>(
     &mut self, fi: &FrameInvariants<T>, deblock: &DeblockState,
   ) -> io::Result<()> {
-    let planes = if fi.sequence.chroma_sampling == ChromaSampling::Cs400 { 1 } else { MAX_PLANES };
+    let planes = if fi.sequence.chroma_sampling == ChromaSampling::Cs400 {
+      1
+    } else {
+      MAX_PLANES
+    };
     assert!(deblock.levels[0] < 64);
     self.write(6, deblock.levels[0])?; // loop deblocking filter level 0
     assert!(deblock.levels[1] < 64);
@@ -944,7 +948,11 @@ impl<W: io::Write> UncompressedHeader for BitWriter<W, BigEndian> {
   ) -> io::Result<()> {
     if fi.sequence.enable_restoration && !fi.allow_intrabc {
       // && !self.lossless
-      let planes = if fi.sequence.chroma_sampling == ChromaSampling::Cs400 { 1 } else { MAX_PLANES };
+      let planes = if fi.sequence.chroma_sampling == ChromaSampling::Cs400 {
+        1
+      } else {
+        MAX_PLANES
+      };
       let mut use_lrf = false;
       let mut use_chroma_lrf = false;
       for i in 0..planes {
