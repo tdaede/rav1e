@@ -1623,24 +1623,24 @@ fn lookahead_size_properly_bounded_lowlatency_0() {
   const LOOKAHEAD_SIZE: usize = 0;
   const EXPECTATIONS: LookaheadTestExpectations = LookaheadTestExpectations {
     pre_receive_frame_q_lens: [
-      1, 2, 3, 4, 5, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-      6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-      6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6,
-    ],
-    pre_receive_fi_lens: [
-      0, 0, 0, 1, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-      3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-      3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3,
-    ],
-    post_receive_frame_q_lens: [
       1, 2, 3, 4, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
       5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
       5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5,
     ],
-    post_receive_fi_lens: [
+    pre_receive_fi_lens: [
       0, 0, 0, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
       2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
       2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+    ],
+    post_receive_frame_q_lens: [
+      1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+      4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+      4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4,
+    ],
+    post_receive_fi_lens: [
+      0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
     ],
   };
   lookahead_size_properly_bounded(LOOKAHEAD_SIZE, true, &EXPECTATIONS);
@@ -1687,6 +1687,10 @@ fn lookahead_size_properly_bounded(
     post_receive_fi_lens[i] = ctx.inner.frame_data.len();
   }
 
+  dbg!(&pre_receive_frame_q_lens[..]);
+  dbg!(&pre_receive_fi_lens[..]);
+  dbg!(&post_receive_frame_q_lens[..]);
+  dbg!(&post_receive_fi_lens[..]);
   assert_eq!(
     &pre_receive_frame_q_lens[..],
     &expectations.pre_receive_frame_q_lens[..]
